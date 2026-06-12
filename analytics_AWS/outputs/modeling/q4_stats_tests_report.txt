@@ -1,0 +1,21 @@
+=== TEST 1: Daily Revenue (Q4 vs Non-Q4) ===
+n_q4=153 | n_non_q4=451
+mean_q4: 48,388.02
+mean_non_q4: 26,885.49
+diff (q4 - non_q4): 21,502.53
+t_stat (Welch): 11.5943
+p_value (Normal approx): 0
+significant (alpha=0.05): True
+df_eff (Welch-Satterthwaite): 187.95
+95% CI (diff, Normal approx): [17,867.62, 25,137.43]
+
+=== TEST 2: Daily Return Rate (Q4 vs Non-Q4) ===
+n_q4=153 | n_non_q4=451
+mean_q4: 0.0402
+mean_non_q4: 0.0394
+diff (q4 - non_q4): 0.0007
+t_stat (Welch): 0.0830
+p_value (Normal approx): 0.933817
+significant (alpha=0.05): False
+df_eff (Welch-Satterthwaite): 302.37
+95% CI (diff, Normal approx): [-0.0167, 0.0182]

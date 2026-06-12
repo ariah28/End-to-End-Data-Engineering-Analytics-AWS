@@ -1,0 +1,282 @@
+{
+  "Comment": "End-to-end Online Retail II data pipeline orchestrated by AWS Step Functions. This state machine replaces the local Apache Airflow DAG and runs the same 10-step pipeline in sequence. Each step is an AWS Glue job or an SQL execution. On any failure, SNS sends an email notification to the configured address.",
+  "StartAt": "01_CreateSchemas",
+  "States": {
+
+    "01_CreateSchemas": {
+      "Type": "Task",
+      "Comment": "Create the raw, staging, and analytics schemas in Redshift if they do not already exist.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-01-create-schemas"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0,
+          "Comment": "Retry up to 4 times with a 3 minute wait between attempts, matching the local Airflow retry config."
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "02_CreateRawTable"
+    },
+
+    "02_CreateRawTable": {
+      "Type": "Task",
+      "Comment": "Create the raw.online_retail table in Redshift if it does not already exist.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-02-create-raw-table"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "04_RawDataProfilingChecks"
+    },
+
+    "04_RawDataProfilingChecks": {
+      "Type": "Task",
+      "Comment": "Run profiling queries against raw.online_retail to validate the loaded data.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-04-raw-profiling"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "06_RawToStagingSync"
+    },
+
+    "06_RawToStagingSync": {
+      "Type": "Task",
+      "Comment": "Read both CSV files from S3, identify new rows, append them to raw.online_retail, and rebuild staging.online_retail_clean with all data quality rules applied.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-06-raw-to-staging-sync"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "05_StagingValidationChecks"
+    },
+
+    "05_StagingValidationChecks": {
+      "Type": "Task",
+      "Comment": "Run validation queries against staging.online_retail_clean to confirm all transformation rules were applied correctly.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-05-staging-validation"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "07_BuildAnalyticsModel"
+    },
+
+    "07_BuildAnalyticsModel": {
+      "Type": "Task",
+      "Comment": "Build the analytics star schema in Redshift: create all dimension and fact tables and load them from staging.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-07-build-analytics-model"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "08_AnalyticsBusinessQueries"
+    },
+
+    "08_AnalyticsBusinessQueries": {
+      "Type": "Task",
+      "Comment": "Run the portfolio analytics queries against the star schema to verify business metrics are accessible and correct.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-08-analytics-queries"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "09_GenerateVisuals"
+    },
+
+    "09_GenerateVisuals": {
+      "Type": "Task",
+      "Comment": "Check whether data has changed since the last run. If yes, generate all five visualizations and save them to S3 under versioned and latest paths.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-09-generate-visuals"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "10_Q4Statistics"
+    },
+
+    "10_Q4Statistics": {
+      "Type": "Task",
+      "Comment": "Run two Welch t-tests on daily revenue and daily return rate comparing Q4 versus non-Q4 periods. Save the report to S3.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-10-q4-statistics"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "11_Q4Regression"
+    },
+
+    "11_Q4Regression": {
+      "Type": "Task",
+      "Comment": "Run OLS regression with daily_revenue as the dependent variable and is_q4 and daily_orders as independent variables. Save the dataset and print results.",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "online-retail-11-q4-regression"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 180,
+          "MaxAttempts": 4,
+          "BackoffRate": 1.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "PipelineSuccess"
+    },
+
+    "NotifyFailure": {
+      "Type": "Task",
+      "Comment": "Send an email notification via SNS when any pipeline step fails. The message includes the step name and error details so the issue can be investigated in CloudWatch.",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${sns_topic_arn}",
+        "Subject": "Online Retail Pipeline FAILED",
+        "Message.$": "States.Format('Pipeline failed at step: {}. Error: {}', $$.State.Name, $.error)"
+      },
+      "Next": "PipelineFailed"
+    },
+
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Comment": "Terminal failure state reached after SNS notification was sent.",
+      "Error": "PipelineFailed",
+      "Cause": "One or more pipeline steps failed. Check CloudWatch logs for details."
+    },
+
+    "PipelineSuccess": {
+      "Type": "Succeed",
+      "Comment": "All 10 pipeline steps completed successfully."
+    }
+
+  }
+}

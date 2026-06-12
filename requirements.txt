@@ -1,0 +1,9 @@
+# Python dependencies for the AWS Glue pipeline jobs
+# these are installed on the Glue worker nodes via the Glue job extra Python libraries setting
+# boto3 is pre-installed in Glue 4.0 but listed here for documentation completeness
+# PySpark is provided natively by Glue and does not need to be listed here
+
+boto3>=1.34.0
+pandas>=2.0.0
+numpy>=1.26.0
+matplotlib>=3.8.0
