@@ -20,6 +20,8 @@ This project is designed to run on AWS and contains production-ready code struct
 
 ## AWS Architecture
 
+![Architecture Diagram](architecture_diagram_AWS.png)
+
 ```
 S3 (raw CSV files)
     |
